@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nomad/acl"
@@ -62,14 +63,57 @@ func (m *Monitor) monitor(conn io.ReadWriteCloser) {
 		return
 	}
 
+	stopCh := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
+	defer close(stopCh)
 	defer cancel()
 
-	monitor := monitor.NewStreamWriter(512, m.c.logger, &log.LoggerOptions{
+	monitor := monitor.New(512, m.c.logger, &log.LoggerOptions{
 		Level:      logLevel,
 		JSONFormat: false,
 	})
 
-	monitor.Monitor(ctx, cancel, conn, encoder, decoder)
+	go func() {
+		if _, err := conn.Read(nil); err != nil {
+			close(stopCh)
+			cancel()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		}
+	}()
 
+	logCh := monitor.Start(stopCh)
+
+	var streamErr error
+OUTER:
+	for {
+		select {
+		case log := <-logCh:
+			var resp cstructs.StreamErrWrapper
+			resp.Payload = log
+			if err := encoder.Encode(resp); err != nil {
+				streamErr = err
+				break OUTER
+			}
+			encoder.Reset(conn)
+		case <-ctx.Done():
+			break OUTER
+		}
+	}
+
+	if streamErr != nil {
+		// Nothing to do as conn is closed
+		if streamErr == io.EOF || strings.Contains(streamErr.Error(), "closed") {
+			return
+		}
+
+		// Attempt to send the error
+		encoder.Encode(&cstructs.StreamErrWrapper{
+			Error: cstructs.NewRpcError(streamErr, helper.Int64ToPtr(500)),
+		})
+		return
+	}
 }
