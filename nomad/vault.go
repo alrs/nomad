@@ -10,11 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/tomb.v2"
+	tomb "gopkg.in/tomb.v2"
 
-	"github.com/armon/go-metrics"
+	metrics "github.com/armon/go-metrics"
 	log "github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/go-multierror"
+	multierror "github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/nomad/helper/sensitive"
 	"github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/nomad/structs/config"
 	vapi "github.com/hashicorp/vault/api"
@@ -198,7 +199,7 @@ type vaultClient struct {
 	connEstablishedErr error
 
 	// token is the raw token used by the client
-	token string
+	token sensitive.Sensitive
 
 	// tokenData is the data of the passed Vault token
 	tokenData *tokenData
@@ -437,7 +438,7 @@ func (v *vaultClient) buildClient() error {
 
 	// Set the token
 	v.token = v.config.Token
-	client.SetToken(v.token)
+	client.SetToken(v.token.Plaintext())
 	v.auth = client.Auth().Token()
 
 	return nil
