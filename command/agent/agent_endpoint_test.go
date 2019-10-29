@@ -71,7 +71,7 @@ func TestHTTP_AgentSelf(t *testing.T) {
 		require.Equal("<redacted>", self.Config.Consul.Token.Plaintext())
 
 		// Check the Circonus config
-		require.Empty(self.Config.Telemetry.CirconusAPIToken)
+		require.Empty(self.Config.Telemetry.CirconusAPIToken.Plaintext())
 
 		// Assign a Consul token and require it is redacted.
 		s.Config.Telemetry.CirconusAPIToken = "badc0deb-adc0-deba-dc0d-ebadc0debadc"
