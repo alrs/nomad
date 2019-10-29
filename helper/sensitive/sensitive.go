@@ -9,9 +9,12 @@ func (s Sensitive) Plaintext() string {
 }
 
 func (s Sensitive) String() string {
+	if s == "" {
+		return ""
+	}
 	return "[REDACTED]"
 }
 
 func (s Sensitive) MarshalJSON() ([]byte, error) {
-	return json.Marshal("[REDACTED]")
+	return json.Marshal(s.String())
 }
