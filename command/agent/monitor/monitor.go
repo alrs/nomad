@@ -44,9 +44,9 @@ func New(buf int, logger log.InterceptLogger, opts *log.LoggerOptions) *Monitor 
 func (d *Monitor) Start(stopCh <-chan struct{}) <-chan []byte {
 	d.logger.RegisterSink(d.sink)
 
-	logCh := make(chan []byte, d.bufSize)
+	streamCh := make(chan []byte, d.bufSize)
 	go func() {
-		defer close(logCh)
+		defer close(streamCh)
 		for {
 			select {
 			case log := <-d.logCh:
@@ -55,7 +55,7 @@ func (d *Monitor) Start(stopCh <-chan struct{}) <-chan []byte {
 					d.logger.DeregisterSink(d.sink)
 					close(d.logCh)
 					return
-				case logCh <- log:
+				case streamCh <- log:
 				}
 			case <-stopCh:
 				d.Lock()
@@ -76,6 +76,9 @@ func (d *Monitor) Start(stopCh <-chan struct{}) <-chan []byte {
 			case <-stopCh:
 				break LOOP
 			case <-time.After(d.droppedDuration):
+				d.Lock()
+				defer d.Unlock()
+
 				if d.droppedCount > 0 {
 					dropped := fmt.Sprintf("[WARN] Monitor dropped %d logs during monitor request\n", d.droppedCount)
 					select {
@@ -96,7 +99,7 @@ func (d *Monitor) Start(stopCh <-chan struct{}) <-chan []byte {
 		}
 	}()
 
-	return logCh
+	return streamCh
 }
 
 // Write attempts to send latest log to logCh
