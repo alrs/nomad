@@ -8,6 +8,7 @@ import (
 
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/stretchr/testify/require"
+	"github.com/ugorji/go/codec"
 )
 
 func TestSensitive_Plaintext(t *testing.T) {
@@ -33,7 +34,19 @@ func TestSensitive_JSON_Marshal(t *testing.T) {
 	require.NotContains(t, string(b), s.Plaintext())
 }
 
-func TestSensitive_HCLog(t *testing.T) {
+func TestSensitive_JSON_Unmarshal(t *testing.T) {
+	var val struct {
+		P string
+		S Sensitive
+	}
+
+	err := json.Unmarshal([]byte(`{"P": "value", "S": "sensitive"}`), &val)
+	require.NoError(t, err)
+	require.Equal(t, "value", val.P)
+	require.Equal(t, "sensitive", val.S.Plaintext())
+}
+
+func TestSensitive_HCLog_Text(t *testing.T) {
 	s := Sensitive("super-secret-value")
 
 	var buf bytes.Buffer
@@ -47,14 +60,51 @@ func TestSensitive_HCLog(t *testing.T) {
 	require.NotContains(t, buf.String(), s.Plaintext())
 }
 
-func TestSensitive_JSON_UnMarshal(t *testing.T) {
-	var val struct {
-		P string
-		S Sensitive
-	}
+func TestSensitive_HCLog_Json(t *testing.T) {
+	s := Sensitive("super-secret-value")
 
-	err := json.Unmarshal([]byte(`{"P": "value", "S": "sensitive"}`), &val)
-	require.NoError(t, err)
-	require.Equal(t, "value", val.P)
-	require.Equal(t, "sensitive", val.S.Plaintext())
+	var buf bytes.Buffer
+	logger := hclog.New(&hclog.LoggerOptions{
+		JSONFormat: true,
+		Output:     &buf,
+	})
+
+	logger.Info("my log line", "value", s)
+
+	require.Contains(t, buf.String(), `"value":"[REDACTED]"`)
+	require.NotContains(t, buf.String(), s.Plaintext())
+}
+
+func TestSensitive_UgorjiGo_Json(t *testing.T) {
+	s := Sensitive("super-secret-value")
+
+	h := &codec.JsonHandle{HTMLCharsAsIs: true}
+
+	var buf bytes.Buffer
+	enc := codec.NewEncoder(&buf, h)
+	require.NoError(t, enc.Encode(s))
+
+	var out Sensitive
+	dec := codec.NewDecoder(&buf, h)
+	require.NoError(t, dec.Decode(&out))
+
+	require.Equal(t, out, s)
+	require.Equal(t, "super-secret-value", out.Plaintext())
+}
+
+func TestSensitive_UgorjiGo_MsgPack(t *testing.T) {
+	s := Sensitive("super-secret-value")
+
+	h := &codec.MsgpackHandle{}
+
+	var buf bytes.Buffer
+	enc := codec.NewEncoder(&buf, h)
+	require.NoError(t, enc.Encode(s))
+
+	var out Sensitive
+	dec := codec.NewDecoder(&buf, h)
+	require.NoError(t, dec.Decode(&out))
+
+	require.Equal(t, out, s)
+	require.Equal(t, "super-secret-value", out.Plaintext())
 }
